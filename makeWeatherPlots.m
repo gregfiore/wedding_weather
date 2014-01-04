@@ -1,0 +1,305 @@
+% Produce weather information
+% 
+% 1.  Mean daily high temperature of the day
+%     - value
+%     - time of day
+%     - variation
+% 2.  Mean low temperature of the day
+%     - value
+%     - time of day
+% 3.  Mean temperature at 4 pm
+%     - value
+% 4.  Mean temperature at 10 pm
+%     - value
+% 5.  Preciptation
+%     - Most precipitation
+%     - First preciptation hour
+%     - Last precipiptation hour
+%     - Number of years it's rained
+% 6.  Conditions
+
+global july_data august_data days years april_data
+
+month = 'August';
+
+switch month
+    case 'July'
+        historical_data = july_data;  % month to look at
+        month_no = 7;
+        days = 1:31;
+    case 'August'
+        historical_data = august_data;  % month to look at
+        month_no = 8;
+        days = 1:31;
+    case 'April'
+        historical_data = april_data;  % month to look at
+        month_no = 4;
+        days = 1:30;       
+        
+end
+
+times = [14:23]/24;
+t_thresh = 1/3/24;
+
+conditions = {'Clear','Fog','Mist','Haze','Smoke','Scattered Clouds','Mostly Cloudy','Overcast','Drizzle','Partly Cloudy', 'Thunderstorm','Light Rain','Light Drizzle','Light Rain Showers','Unknown'};
+
+if 0
+    n_years = length(years);
+
+    temp1 = zeros(size(historical_data,1),length(days),2);
+    temp2 = zeros(size(historical_data,1),length(days),2);
+    temp3 = zeros(size(historical_data,1),length(days),length(times));
+    temp4 = zeros(size(historical_data,1),length(days));
+    temp5 = zeros(length(days),length(conditions));
+    temp6 = zeros(length(days),length(conditions));
+    
+    for i = 1:n_years
+
+        disp(['Year = ',num2str(years(i))])
+
+        for j = 1:length(days)
+            data = extractWeather(month_no,days(j),years(i));
+
+            try
+                % For daily high temperatures
+                [temp1(i,j,1), id] = max(cell2mat(data(:,2)));
+                temp1(i,j,2) = data{id,1};
+
+                % For daily low temperatures
+                [temp2(i,j,1), id] = min(cell2mat(data(:,2)));
+                temp2(i,j,2) = data{id,1};
+
+                temp_data = cell2mat(data(:,2));
+
+                % Time vs. Temperature
+                time_data = cell2mat(data(:,1));
+                for k = 1:length(times)
+                    
+                    t_diff = abs(time_data - times(k));
+                    t_ids = find(t_diff <= t_thresh);
+                    t_ids(temp_data(t_ids) == NaN) = [];
+
+                    if length(t_ids) > 0
+                        if ~isnan(temp_data(t_ids))
+                            temp3(i,j,k) = mean(temp_data(t_ids));
+                        end
+                    end
+
+                end
+
+                % Precipitation
+                precipitation = cell2mat(data(:,10));
+                pid = find(isfinite(precipitation));
+                if pid
+                    temp4(i,j) = max(precipitation(pid));
+                end
+                
+                % Conditions
+                temp_cond = data(:,12);
+                for k = 1:length(conditions)
+                    cond_id = find(strcmp(conditions{k}, temp_cond) == 1);
+                    if cond_id;
+                        temp5(j,k) = temp5(j,k) + 1;
+                        for r = 1:length(cond_id)
+                            if time_data(cond_id(r)) > 16/24 && time_data(cond_id(r)) < 22/24
+                                temp6(j,k) = temp6(j,k) + 1;
+                            end
+                        end
+                    end
+                end
+                
+                
+            catch
+                disp(['Error processing ',month,' ',num2str(j),', ',num2str(years(i))])
+            end 
+        end
+    end
+end
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+% Get Daily High Temperatures %
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+
+temp_highs = zeros(length(days),4);
+for i = 1:size(temp1,2)
+    temp = temp1(find(isfinite(temp1(:,i))),i);
+    temp = temp(find(temp ~=0 ));
+    temp_highs(i,1) = mean(temp);
+    temp_highs(i,2) = min(temp);
+    temp_highs(i,3) = max(temp);
+    temp_highs(i,4) = temp_highs(i,1) + std(temp);
+    temp_highs(i,5) = temp_highs(i,1) - std(temp);
+end
+
+temp_highs(:,6) = mean(temp1(:,:,2))';
+
+% temp_highs(:,1) = mean(temp1(:,:,1))';
+% temp_highs(:,2) = min(temp1(:,:,1))';
+% temp_highs(:,3) = max(temp1(:,:,1))';
+% temp_highs(:,4) = temp_highs(:,1) + std(temp1(:,:,1))';
+% temp_highs(:,5) = temp_highs(:,1) - std(temp1(:,:,1))';
+% temp_highs(:,6) = mean(temp1(:,:,2))';
+
+mean_occurance = mean(temp_highs(:,6))*24;
+mean_hour = floor(mean_occurance);
+mean_minutes = round((mean_occurance - mean_hour) * 60);
+mean_high_temperature = mean(temp_highs(:,1));
+
+[n,xout] = hist(reshape(temp1(:,:,1),length(days)*32,1),50);
+
+
+figure; set(gcf,'Position',[30   664   560   420])
+plot(days,temp_highs(:,1:5))
+axis tight
+ylabel('Daily High [F]')
+xlabel(['Day of ',month])
+title(['Historical Daily High Temperature (Average Time of Occurrence = ',num2str(mean_hour-12),':',num2str(mean_minutes),' PM'])
+grid on;
+legend('Mean','Record Low','Record High','+1 Sigma','-1 Sigma')
+
+
+figure; set(gcf,'Position',[592   664   560   420])
+bar(xout,n)
+grid on; axis tight; 
+title({['Histogram of Historical Temperatures Month of ',month];['Years: ',num2str(years(1)),' to ',num2str(years(end))]; ['Mean Temperature = ',num2str(mean_high_temperature),'Deg. F']})
+xlabel('Daily High [F]')
+ylabel('Number of Occurrences')
+ylim = get(gca,'YLim');
+hold on;
+plot(mean_high_temperature*[1 1],ylim,'r')
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+% Get Daily Low Temperatures  %
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+
+temp_lows = zeros(length(days),4);
+for i = 1:size(temp2,2)
+    temp = temp2(find(isfinite(temp2(:,i))),i);
+    temp = temp(find(temp ~=0 ));
+    temp_lows(i,1) = mean(temp);
+    temp_lows(i,2) = min(temp);
+    temp_lows(i,3) = max(temp);
+    temp_lows(i,4) = temp_lows(i,1) + std(temp);
+    temp_lows(i,5) = temp_lows(i,1) - std(temp);
+end
+
+temp_lows(:,6) = mean(temp2(:,:,2))';
+
+
+% temp_lows = zeros(length(days),4);
+% temp_lows(:,1) = mean(temp2(:,:,1))';
+% temp_lows(:,2) = min(temp2(:,:,1))';
+% temp_lows(:,3) = max(temp2(:,:,1))';
+% temp_lows(:,4) = temp_lows(:,1) + std(temp2(:,:,1))';
+% temp_lows(:,5) = temp_lows(:,1) - std(temp2(:,:,1))';
+% temp_lows(:,6) = mean(temp2(:,:,2))';
+
+mean_occurance = mean(temp_lows(:,6))*24;
+mean_hour = floor(mean_occurance);
+mean_minutes = round((mean_occurance - mean_hour) * 60);
+mean_low_temperature = mean(temp_lows(:,1));
+
+[n,xout] = hist(reshape(temp2(:,:,1),length(days)*32,1),50);
+
+
+figure; set(gcf,'Position',[28   171   560   420])
+plot(temp_lows(:,1:5))
+axis tight
+ylabel('Daily High [F]')
+xlabel(['Day of ',month])
+title(['Historical Daily Low Temperature (Average Time of Occurrence = ',num2str(mean_hour),':',num2str(mean_minutes),' AM'])
+grid on;
+legend('Mean','Record Low','Record High','+1 Sigma','-1 Sigma')
+
+
+figure; set(gcf,'Position',[591   169   560   420])
+bar(xout,n)
+grid on; axis tight; 
+title({['Histogram of Historical Temperatures Month of ',month];['Years: ',num2str(years(1)),' to ',num2str(years(end))]; ['Mean Temperature = ',num2str(mean_low_temperature),'Deg. F']})
+xlabel('Daily Low [F]')
+ylabel('Number of Occurrences')
+ylim = get(gca,'YLim');
+hold on;
+plot(mean_low_temperature*[1 1],ylim,'r')
+
+%%%%%%%%%%%%%%%%%%%%%%%%
+% Temperature vs. Time %
+%%%%%%%%%%%%%%%%%%%%%%%%
+
+temp_vs_time = zeros(length(times),3);
+
+for i = 1:length(times)
+    temp3_data = temp3(:,:,i);
+    ids = find(temp3_data ~= 0);
+    temp_vs_time(i,1) = mean(mean(temp3_data(ids)));
+    temp_vs_time(i,2) = std(temp3_data(ids));
+    temp_vs_time(i,3) = length(ids);
+end
+
+times = times * 24;
+figure; set(gcf,'Position',[1155         565         580         519]);
+ax(1) = subplot(211);
+plot(times,temp_vs_time(:,1),'b',times,temp_vs_time(:,1)+temp_vs_time(:,2),'r', times,temp_vs_time(:,1)-temp_vs_time(:,2),'r')
+axis tight; grid on; legend('Mean','+1 Sigma','-1 Sigma')
+title({['Historical Temperature vs. Time of Day ',month];...
+       ['Mean at 4 PM: ',num2str(temp_vs_time(3,1)),' deg. F'];...
+       ['Mean at 10 PM: ',num2str(temp_vs_time(9,1)), ' deg. F']})
+
+ax(2) = subplot(212);
+plot(times, temp_vs_time(:,3))
+legend('N. Data Points')
+set(ax(2),'Position',[0.1300    0.0500    0.7750    0.2]);
+grid on; axis tight; set(gca,'XTickLabel','');
+
+
+set(ax(1),'Position',[0.1300    0.35    0.7750    0.55])
+set(ax(1),'XTick',[14, 16, 18, 20, 22],'XTickLabel',{'2 PM','4 PM','6 PM','8 PM','10 PM'});
+
+%%%%%%%%%%%%%%%%%
+% Precipitation %
+%%%%%%%%%%%%%%%%%
+
+n_precip = zeros(size(temp4));
+n_precip(find(temp4 > 0)) = 1;
+
+n_precip = sum(n_precip);
+
+[years_it_rained, days_it_rained] = find(temp4 > 0);
+
+for i = 1:length(days_it_rained)
+    disp(['It rained on ',month,' ',num2str(days_it_rained(i)),' in ',num2str(years(years_it_rained(i)))])
+end
+
+figure; set(gcf,'Position',[1154         166         583         325])
+bar(n_precip);
+xlabel(['Day in ',month])
+ylabel('N. Occurances of Rain')
+title(['Instances of Rain Between ',num2str(years(1)),' and ',num2str(years(end))])
+grid on
+axis tight;
+
+%%%%%%%%%%%%%%
+% Conditions %
+%%%%%%%%%%%%%%
+
+figure;  set(gcf,'Position',[340   378   647   683])
+n_conditions = sum(temp5);
+total_conditions = sum(n_conditions);
+bar(1:length(conditions), n_conditions)
+axis tight;
+xticklabel_rotate(1:length(conditions),90,conditions)
+y_ticks = get(gca,'YTick');
+set(gca,'YTickLabel',num2str(round(y_ticks'/total_conditions * 100)))
+title(['Weather Conditions for the Month of ',month])
+ylabel('Percentage Occurrence')
+
+figure;  set(gcf,'Position',[986   377   646   683])
+n_conditions = sum(temp6);
+total_conditions = sum(n_conditions);
+bar(1:length(conditions), n_conditions)
+xticklabel_rotate(1:length(conditions),90,conditions)
+y_ticks = get(gca,'YTick');
+set(gca,'YTickLabel',num2str(round(y_ticks'/total_conditions * 100)))
+title(['Weather Conditions for the Month of ',month,' Between 4 PM and 10 PM'])
+ylabel('Percentage Occurrence')
+
